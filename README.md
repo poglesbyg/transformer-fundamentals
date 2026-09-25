@@ -17,9 +17,9 @@ so on. There are no solutions in the repo.
 ## Setup
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate   # macOS has no `python` until the venv is active
 pip install -r requirements.txt
-pytest -q                 # everything fails; that's the starting line
+python -m pytest -q       # everything fails; that's the starting line
 ```
 
 A laptop CPU is enough for parts 1–4. ARENA needs a GPU (Colab is fine).
