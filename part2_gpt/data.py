@@ -55,6 +55,12 @@ def get_batch(data: Tensor, block_size: int, batch_size: int, generator: torch.G
     Every valid start index must be reachable, and no window may run off the end.
     This function is where the most common silent bug in language modelling lives.
     """
+    # Randomly sample start indices for the batch
+    start_indices = torch.randint(0, len(data) - block_size, (batch_size,), generator=generator)
+    # Create the input and target batches
+    x = torch.stack([data[i:i + block_size] for i in start_indices])
+    y = torch.stack([data[i + 1:i + block_size + 1] for i in start_indices])
+    return x, y
     raise NotImplementedError
 
 

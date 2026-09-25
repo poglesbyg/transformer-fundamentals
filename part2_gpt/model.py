@@ -25,6 +25,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
+import torch.nn.functional as F
 
 
 @dataclass
@@ -54,10 +55,16 @@ class LayerNorm(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
-        # TODO: self.w, self.b as nn.Parameter
+        self.w = nn.Parameter(torch.ones(cfg.d_model))
+        self.b = nn.Parameter(torch.zeros(cfg.d_model))
+
 
     def forward(self, x: Tensor) -> Tensor:
         # x: [B, T, d_model] -> [B, T, d_model]
+        mean = x.mean(dim=-1, keepdim=True)  # [B, T, 1]
+        var = x.var(dim=-1, keepdim=True, unbiased=False)  # [B, T, 1]
+        x_norm = (x - mean) / torch.sqrt(var + self.cfg.layer_norm_eps)  # [B, T, d_model]
+        return self.w * x_norm + self.b  # [B, T, d_model]
         raise NotImplementedError
 
 
@@ -67,9 +74,11 @@ class Embed(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
-        # TODO: self.W_E, normal(0, cfg.init_std)
+        self.W_E = nn.Parameter(torch.randn(cfg.d_vocab, cfg.d_model) * cfg.init_std)
 
     def forward(self, tokens: Tensor) -> Tensor:
+        # tokens: [B, T] -> [B, T, d_model]
+        return self.W_E[tokens]  # [B, T, d_model]
         raise NotImplementedError
 
 
@@ -79,9 +88,11 @@ class PosEmbed(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
-        # TODO: self.W_pos, normal(0, cfg.init_std)
+        self.W_pos = nn.Parameter(torch.randn(cfg.n_ctx, cfg.d_model) * cfg.init_std)
 
     def forward(self, tokens: Tensor) -> Tensor:
+        B, T = tokens.shape
+        return self.W_pos[:T][None].expand(B, T, -1)   # [T, d] -> [1, T, d] -> [B, T, d]
         raise NotImplementedError
 
 
@@ -113,8 +124,34 @@ class Attention(nn.Module):
         self.cfg = cfg
         self.pattern: Tensor | None = None
         # TODO: parameters
+        self.W_Q = nn.Parameter(torch.randn(cfg.n_heads, cfg.d_model, cfg.d_head) * cfg.init_std)
+        self.W_K = nn.Parameter(torch.randn(cfg.n_heads, cfg.d_model, cfg.d_head) * cfg.init_std)
+        self.W_V = nn.Parameter(torch.randn(cfg.n_heads, cfg.d_model, cfg.d_head) * cfg.init_std)
+        self.b_Q = nn.Parameter(torch.zeros(cfg.n_heads, cfg.d_head))
+        self.b_K = nn.Parameter(torch.zeros(cfg.n_heads, cfg.d_head))
+        self.b_V = nn.Parameter(torch.zeros(cfg.n_heads, cfg.d_head))
+        self.W_O = nn.Parameter(torch.randn(cfg.n_heads, cfg.d_head, cfg.d_model) * cfg.init_std)
+        self.b_O = nn.Parameter(torch.zeros(cfg.d_model))
 
     def forward(self, x: Tensor) -> Tensor:
+        # x: [B, T, d_model] -> [B, T, d_model]
+        T = x.size(1)
+        Dh = self.cfg.d_head
+        # Compute Q, K, V
+        q = torch.einsum("btd,hde->bhte", x, self.W_Q) + self.b_Q[None, :, None]  # [B, H, T, d_head]
+        k = torch.einsum("btd,hde->bhte", x, self.W_K) + self.b_K[None, :, None]  # [B, H, T, d_head]
+        v = torch.einsum("btd,hde->bhte", x, self.W_V) + self.b_V[None, :, None]  # [B, H, T, d_head]
+        # Compute attention scores
+        scores = torch.einsum("bhte,bhse->bhts", q, k) / (Dh ** 0.5)  # [B, H, T, T]
+        # Apply causal mask
+        mask = torch.triu(torch.ones(T, T, dtype=torch.bool, device=x.device), diagonal=1)  # [T, T]
+        scores = scores.masked_fill(mask[None, None, :, :], float('-inf'))  # [B, H, T, T]
+        # Compute attention pattern
+        self.pattern = torch.softmax(scores, dim=-1).detach()  # [B, H, T, T]
+        # Compute attention output
+        z = torch.einsum("bhts,bhse->bhte", self.pattern, v)  # [B, H, T, d_head]
+        out = torch.einsum("bhte,hed->btd", z, self.W_O) + self.b_O[None, None, :]  # [B, T, d_model]
+        return out
         raise NotImplementedError
 
 
@@ -128,9 +165,16 @@ class MLP(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
-        # TODO
+        self.W_in = nn.Parameter(torch.randn(cfg.d_model, cfg.d_mlp) * cfg.init_std)
+        self.b_in = nn.Parameter(torch.zeros(cfg.d_mlp))
+        self.W_out = nn.Parameter(torch.randn(cfg.d_mlp, cfg.d_model) * cfg.init_std)
+        self.b_out = nn.Parameter(torch.zeros(cfg.d_model))
 
     def forward(self, x: Tensor) -> Tensor:
+        # x: [B, T, d_model] -> [B, T, d_model]
+        hidden = F.gelu(x @ self.W_in + self.b_in, approximate="tanh")  # [B, T, d_mlp]
+        out = hidden @ self.W_out + self.b_out  # [B, T, d_model]
+        return out
         raise NotImplementedError
 
 
@@ -140,10 +184,18 @@ class Block(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
-        # TODO
+        self.ln1 = LayerNorm(cfg)
+        self.attn = Attention(cfg)
+        if not cfg.attn_only:
+            self.ln2 = LayerNorm(cfg)
+            self.mlp = MLP(cfg)
 
     def forward(self, resid: Tensor) -> Tensor:
-        raise NotImplementedError
+        # resid: [B, T, d_model]
+        resid = resid + self.attn(self.ln1(resid))     # attention reads a normalized copy, writes back additively
+        if not self.cfg.attn_only:
+            resid = resid + self.mlp(self.ln2(resid))  # same pattern for the MLP
+        return resid
 
 
 class GPT(nn.Module):
@@ -156,15 +208,32 @@ class GPT(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
-        # TODO
+        self.embed = Embed(cfg)
+        self.pos_embed = PosEmbed(cfg)
+        self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layers)])
+        self.ln_final = LayerNorm(cfg)
+        self.W_U = nn.Parameter(torch.randn(cfg.d_model, cfg.d_vocab) * cfg.init_std)
+        self.b_U = nn.Parameter(torch.zeros(cfg.d_vocab))
 
     def forward(self, tokens: Tensor) -> Tensor:
+        # tokens: [B, T] -> logits: [B, T, d_vocab]
+        B, T = tokens.shape
+        assert T <= self.cfg.n_ctx, f"Input sequence length {T} exceeds model context length {self.cfg.n_ctx}."
+        resid = self.embed(tokens) + self.pos_embed(tokens)  # [B, T, d_model]
+        for block in self.blocks:
+            resid = block(resid)  # [B, T, d_model]
+        resid = self.ln_final(resid)  # [B, T, d_model]
+        logits = resid @ self.W_U + self.b_U  # [B, T, d_vocab]
+        return logits
         raise NotImplementedError
 
 
 def count_params(cfg: Config) -> int:
-    """Closed-form parameter count for GPT(cfg), from the shapes above — not by
-    instantiating the model. Interviewers ask for this for GPT-2 small (~124M);
-    be able to do it on paper and say where most of the parameters live.
-    """
-    raise NotImplementedError
+    D, V, H, Dh, M = cfg.d_model, cfg.d_vocab, cfg.n_heads, cfg.d_head, cfg.d_mlp
+    ln = 2 * D                                    # w + b
+    attn = 4 * H * D * Dh + 3 * H * Dh + D        # W_Q,W_K,W_V,W_O + b_Q,b_K,b_V + b_O
+    mlp = D * M + M + M * D + D                   # W_in, b_in, W_out, b_out
+    per_block = ln + attn + (0 if cfg.attn_only else ln + mlp)   # ln1+attn, then ln2+mlp
+    embed = V * D + cfg.n_ctx * D                 # W_E + W_pos
+    unembed = ln + D * V + V                      # ln_final + W_U + b_U
+    return embed + cfg.n_layers * per_block + unembed
