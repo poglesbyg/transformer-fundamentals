@@ -27,13 +27,13 @@ them defeats the purpose.
 ## Commands
 
 ```bash
-pip install -r requirements.txt
-pytest -q                                  # all tests
-pytest tests/test_model.py -x              # part 2, first failure first
-python -m part2_gpt.train --name baseline
-python -m part2_gpt.plot runs/baseline
-python -m part3_debugging.drill_00_baseline
-python -m part4_induction.induction
+uv sync                                    # Python 3.12 + locked deps; use `uv add` for new ones
+uv run pytest -q                                  # all tests
+uv run pytest tests/test_model.py -x              # part 2, first failure first
+uv run python -m part2_gpt.train --name baseline
+uv run python -m part2_gpt.plot runs/baseline
+uv run python -m part3_debugging.drill_00_baseline
+uv run python -m part4_induction.induction
 ```
 
 ## Conventions

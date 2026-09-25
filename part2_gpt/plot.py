@@ -1,6 +1,6 @@
 """Plot one or more runs' metrics.csv side by side.
 
-    python -m part2_gpt.plot runs/baseline [runs/other ...] [--out plot.png]
+    uv run python -m part2_gpt.plot runs/baseline [runs/other ...] [--out plot.png]
 """
 
 import argparse

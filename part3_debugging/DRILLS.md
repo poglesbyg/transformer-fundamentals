@@ -11,8 +11,8 @@ not spotting typos. So the protocol matters:
    step-0 loss, where it is at step 600, typical grad norm, typical update ratio.
 2. For each drill, run it and plot it next to the baseline:
    ```
-   python -m part3_debugging.drill_03
-   python -m part2_gpt.plot runs/drill_00_baseline runs/drill_03
+   uv run python -m part3_debugging.drill_03
+   uv run python -m part2_gpt.plot runs/drill_00_baseline runs/drill_03
    ```
 3. **Without opening the file**, write in the table below: what's abnormal, which
    reference number it matches, and your hypothesis.

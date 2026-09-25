@@ -3,7 +3,7 @@
 Every function here must be written WITHOUT Python loops over tensor elements.
 Reach for broadcasting, indexing, `einsum`, `gather`, `torch.tril`, etc.
 
-Run:  pytest tests/test_part1.py -k ex01 -q
+Run:  uv run pytest tests/test_part1.py -k ex01 -q
 
 Why these five: each one shows up, almost verbatim, inside a transformer.
   batched_outer      -> the q·k score computation, one step removed

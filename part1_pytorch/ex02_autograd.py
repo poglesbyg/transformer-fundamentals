@@ -5,7 +5,7 @@ You will not hand-write backward passes at work. You do this once so that
 you can derive on a whiteboard, and so a gradient-check is a tool you reach for
 when a custom op misbehaves.
 
-Run:  pytest tests/test_part1.py -k ex02 -q
+Run:  uv run pytest tests/test_part1.py -k ex02 -q
 """
 
 from typing import Callable

@@ -13,7 +13,7 @@ Architecture (pre-LN, as in GPT-2):
              resid = resid + MLP(LN2(resid))               (skip MLP if cfg.attn_only)
       -> LN_final -> unembed (W_U, b_U)                    logits [B, T, d_vocab]
 
-Run:  pytest tests/test_model.py -q
+Run:  uv run pytest tests/test_model.py -q
 
 Rules for yourself:
   * Write the shape of every intermediate in a comment the first time through.

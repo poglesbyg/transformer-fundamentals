@@ -1,3 +1,20 @@
+[project]
+name = "transformer-fundamentals"
+version = "0.1.0"
+description = "Build and train a small GPT from scratch, debug training runs, then ARENA interpretability."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "torch>=2.4",
+    "numpy",
+    "matplotlib",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

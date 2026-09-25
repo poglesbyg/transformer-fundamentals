@@ -16,11 +16,17 @@ so on. There are no solutions in the repo.
 
 ## Setup
 
+Uses [uv](https://docs.astral.sh/uv/). Install it once (`brew install uv`, or
+`curl -LsSf https://astral.sh/uv/install.sh | sh`), then:
+
 ```bash
-python3 -m venv .venv && source .venv/bin/activate   # macOS has no `python` until the venv is active
-pip install -r requirements.txt
-python -m pytest -q       # everything fails; that's the starting line
+uv sync                   # creates .venv with Python 3.12 (downloads it if needed) + locked deps
+uv run pytest -q          # everything fails; that's the starting line
 ```
+
+`uv run` always uses the project's `.venv`, so there's nothing to activate and no
+clash with system or Homebrew Python. Add a dependency with `uv add <pkg>`, which
+updates `pyproject.toml` and `uv.lock` together; commit both.
 
 A laptop CPU is enough for parts 1–4. ARENA needs a GPU (Colab is fine).
 
@@ -28,25 +34,25 @@ A laptop CPU is enough for parts 1–4. ARENA needs a GPU (Colab is fine).
 
 | Part | Where | You write | Exit criterion |
 |---|---|---|---|
-| 1. PyTorch fluency | `part1_pytorch/` | Broadcasting and einsum drills, backprop by hand, a bare training loop | `pytest tests/test_part1.py` green. You can derive ∂CE/∂logits and ∂L/∂W for a linear layer on paper. |
-| 2. GPT from scratch | `part2_gpt/` | LayerNorm, embeddings, causal multi-head attention, MLP, block, GPT, param count, batching, loss, AdamW groups, lr schedule, the training loop, sampling | `pytest tests/test_model.py tests/test_train.py` green; `python -m part2_gpt.train` gets val loss ≤ 1.6 (about 7 min on a 4-core CPU), and samples look like Shakespeare. |
+| 1. PyTorch fluency | `part1_pytorch/` | Broadcasting and einsum drills, backprop by hand, a bare training loop | `uv run pytest tests/test_part1.py` green. You can derive ∂CE/∂logits and ∂L/∂W for a linear layer on paper. |
+| 2. GPT from scratch | `part2_gpt/` | LayerNorm, embeddings, causal multi-head attention, MLP, block, GPT, param count, batching, loss, AdamW groups, lr schedule, the training loop, sampling | `uv run pytest tests/test_model.py tests/test_train.py` green; `uv run python -m part2_gpt.train` gets val loss ≤ 1.6 (about 7 min on a 4-core CPU), and samples look like Shakespeare. |
 | 3. Debugging drills | `part3_debugging/` | Diagnoses: seven runs with one bug each, identified from metrics before reading the code | `DRILLS.md` table filled in, plus your own debugging checklist. |
 | 4. Induction head | `part4_induction/` | Train a 2-layer attention-only model; score heads; ablate them. Includes a deliberate positional-shortcut trap. | You find the prev-token and induction heads, show that ablating the prev-token head breaks second-half loss, and can explain K-composition. |
 | 5. ARENA chapter 1 | `arena/` | ARENA exercises in your own notebooks plus a half-page write-up per section | See `arena/README.md` for per-section exit criteria. |
 | Throughout | `interview/QUESTIONS.md` | Timed, out-loud answers; misses logged in `MISSES.md` | All of section A under 3 min each, no notes. |
 
-Run `pytest tests/test_model.py -x` while working on part 2. The tests are
+Run `uv run pytest tests/test_model.py -x` while working on part 2. The tests are
 ordered bottom-up, so the first failure is the next thing to build.
 
 ## Commands
 
 ```bash
-python -m part1_pytorch.ex03_training_loop
-python -m part2_gpt.train --name baseline          # writes runs/baseline/{metrics.csv,model.pt}
-python -m part2_gpt.plot runs/baseline             # loss, grad norm, update ratio, lr
-python -m part2_gpt.sample runs/baseline --prompt "ROMEO:" --top-k 20
-python -m part3_debugging.drill_00_baseline        # then drill_01 .. drill_07; see DRILLS.md
-python -m part4_induction.induction
+uv run python -m part1_pytorch.ex03_training_loop
+uv run python -m part2_gpt.train --name baseline          # writes runs/baseline/{metrics.csv,model.pt}
+uv run python -m part2_gpt.plot runs/baseline             # loss, grad norm, update ratio, lr
+uv run python -m part2_gpt.sample runs/baseline --prompt "ROMEO:" --top-k 20
+uv run python -m part3_debugging.drill_00_baseline        # then drill_01 .. drill_07; see DRILLS.md
+uv run python -m part4_induction.induction
 ```
 
 ## Rules for yourself

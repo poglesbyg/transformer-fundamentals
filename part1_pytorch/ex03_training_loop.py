@@ -4,8 +4,8 @@ Write the five lines every PyTorch training loop is made of, on a problem small
 enough that you can watch it work: a 2-D, 3-arm spiral that a linear model
 cannot solve and a small MLP can.
 
-Run:  pytest tests/test_part1.py -k ex03 -q
-Then: python -m part1_pytorch.ex03_training_loop   (prints loss + accuracy)
+Run:  uv run pytest tests/test_part1.py -k ex03 -q
+Then: uv run python -m part1_pytorch.ex03_training_loop   (prints loss + accuracy)
 """
 
 import math

@@ -12,8 +12,8 @@ perfectly predictable, but only if the model learns the two-head circuit:
   layer 1: an induction head at the current token A looks for earlier positions whose
            previous token was A, attends to them, and copies the token found there
 
-Run:  pytest tests/test_induction.py -q
-Then: python -m part4_induction.induction
+Run:  uv run pytest tests/test_induction.py -q
+Then: uv run python -m part4_induction.induction
 
 What "done" looks like, and what to be able to explain without notes:
   1. Per-position loss: first half ~ln(d_vocab), second half near 0. Say why each.

@@ -1,6 +1,6 @@
 """Autoregressive sampling.
 
-    python -m part2_gpt.sample runs/baseline --prompt "ROMEO:" --temperature 0.8 --top-k 20
+    uv run python -m part2_gpt.sample runs/baseline --prompt "ROMEO:" --temperature 0.8 --top-k 20
 """
 
 import argparse

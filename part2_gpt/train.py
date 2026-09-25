@@ -1,8 +1,8 @@
 """Train your GPT on Tiny Shakespeare, and log the numbers you'd need to debug it.
 
-Run:  pytest tests/test_train.py -q
-Then: python -m part2_gpt.train --name baseline
-      python -m part2_gpt.plot runs/baseline
+Run:  uv run pytest tests/test_train.py -q
+Then: uv run python -m part2_gpt.train --name baseline
+      uv run python -m part2_gpt.plot runs/baseline
 
 The default config (~0.8M params) takes ~7 minutes on a 4-core CPU and reaches
 val loss ~1.5, with train loss ~1.25. Samples look like Shakespeare: real

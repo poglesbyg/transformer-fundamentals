@@ -1,8 +1,8 @@
 """Debugging drill 00 (healthy baseline).
 
 Run with:
-    python -m part3_debugging.drill_00_baseline
-    python -m part2_gpt.plot runs/drill_00_baseline
+    uv run python -m part3_debugging.drill_00_baseline
+    uv run python -m part2_gpt.plot runs/drill_00_baseline
 
 Every drill uses your GPT from part2_gpt/model.py and writes the same metrics.
 Read DRILLS.md for how to work through them.
