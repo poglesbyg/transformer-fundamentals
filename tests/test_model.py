@@ -102,6 +102,16 @@ def test_attention_pattern_is_causal_and_normalised():
     assert (p.triu(diagonal=1) == 0).all(), "a query attended to a future key"
 
 
+def test_attention_gradients_reach_qk():
+    """Matching the forward pass isn't enough: if the pattern is detached inside the
+    computation, W_Q and W_K get no gradient and attention can never learn where to look."""
+    a = _randomize(Attention(CFG))
+    a(torch.randn(2, 6, CFG.d_model)).pow(2).sum().backward()
+    for name in ["W_Q", "W_K", "b_Q", "b_K", "W_V", "W_O"]:
+        g = getattr(a, name).grad
+        assert g is not None and g.abs().sum() > 0, f"no gradient reaches {name}"
+
+
 def test_attention_first_position_attends_only_to_itself():
     a = _randomize(Attention(CFG))
     a(torch.randn(1, 5, CFG.d_model))
