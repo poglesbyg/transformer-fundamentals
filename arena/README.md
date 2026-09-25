@@ -7,6 +7,21 @@ ARENA renumbers and adds sections over time, so this plan refers to sections by
 Run the notebooks on Colab or a rented GPU. Most chapter 1 sections load GPT-2
 small or bigger models through TransformerLens, which is slow on a laptop CPU.
 
+### Colab setup
+
+The repo is private, so clone it with a read-only fine-grained token stored as a
+Colab secret named `GH_TOKEN`. Pin TransformerLens below 4.0: version 4.0 removed
+`HookedTransformer`, which ARENA's material is written against.
+
+```python
+from google.colab import userdata
+token = userdata.get("GH_TOKEN")
+!git clone -q https://{token}@github.com/poglesbyg/transformer-fundamentals
+%cd /content/transformer-fundamentals
+!pip install -q "transformer_lens==3.9.0"
+# then Runtime -> Restart session, and re-run from the %cd line
+```
+
 For each section, keep your own notebook in this folder (`arena/NN-name.ipynb`).
 Write the exercises yourself, and only open the solutions after a real attempt.
 Before moving on, write `arena/NN-name.md`: half a page answering the section's
