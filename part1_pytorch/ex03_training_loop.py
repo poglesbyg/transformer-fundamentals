@@ -50,11 +50,31 @@ def train_classifier(
     Sample each minibatch with torch.randint(..., generator=generator).
     Be able to say, for each line you write, what breaks if you delete it.
     """
-    raise NotImplementedError
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    losses = []
+    for _ in range(steps):
+        # Sample a random minibatch
+        indices = torch.randint(0, X.size(0), (batch_size,), generator=generator)
+        x_batch = X[indices]
+        y_batch = y[indices]
+        # Forward pass
+        logits = model(x_batch)
+        loss = torch.nn.functional.cross_entropy(logits, y_batch)
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        losses.append(loss.item())
+    return losses
 
 
 @torch.no_grad()
 def accuracy(model: nn.Module, X: Tensor, y: Tensor) -> float:
+    """Compute the fraction of correct predictions on (X, y)."""
+    logits = model(X)
+    predictions = torch.argmax(logits, dim=1)
+    correct = (predictions == y).sum().item()
+    return correct / y.size(0)
     raise NotImplementedError
 
 
