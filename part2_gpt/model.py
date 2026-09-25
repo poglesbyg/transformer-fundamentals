@@ -147,9 +147,11 @@ class Attention(nn.Module):
         mask = torch.triu(torch.ones(T, T, dtype=torch.bool, device=x.device), diagonal=1)  # [T, T]
         scores = scores.masked_fill(mask[None, None, :, :], float('-inf'))  # [B, H, T, T]
         # Compute attention pattern
-        self.pattern = torch.softmax(scores, dim=-1).detach()  # [B, H, T, T]
-        # Compute attention output
-        z = torch.einsum("bhts,bhse->bhte", self.pattern, v)  # [B, H, T, d_head]
+        
+        pattern = torch.softmax(scores, dim=-1)       # keeps the gradient
+        self.pattern = pattern.detach()               # stored copy, for inspection only
+        z = torch.einsum("bhts,bhse->bhte", pattern, v)
+
         out = torch.einsum("bhte,hed->btd", z, self.W_O) + self.b_O[None, None, :]  # [B, T, d_model]
         return out
         raise NotImplementedError
