@@ -32,84 +32,84 @@ from torch import Tensor
 
 from part2_gpt.model import GPT, Config
 
+import torch.nn.functional as F
+
 BOS = 0
 
 
 def repeated_random_tokens(batch: int, seq_len: int, d_vocab: int, generator: torch.Generator) -> Tensor:
-    """-> [batch, 1 + 2*seq_len] long: BOS, then seq_len random tokens from [1, d_vocab), then the same seq_len again."""
-    raise NotImplementedError
+    x = torch.randint(1, d_vocab, (batch, seq_len), generator=generator)     # [B, L], never BOS
+    return torch.cat([torch.full((batch, 1), BOS), x, x], dim=1)              # [B, 1 + 2L]
 
 
 def prev_token_score(pattern: Tensor) -> Tensor:
-    """pattern [B, H, T, T] -> [H]: mean attention from each query position q >= 1 to key q-1."""
-    raise NotImplementedError
+    # the diagonal one below the main one: attention from q to q-1, for every q >= 1
+    return pattern.diagonal(offset=-1, dim1=-2, dim2=-1).mean(dim=(0, -1))    # [H]
 
 
 def induction_score(pattern: Tensor, seq_len: int) -> Tensor:
-    """pattern [B, H, T, T] from repeated_random_tokens input (T = 1 + 2*seq_len) -> [H].
-
-    For each query in the second copy, the induction target is the key one
-    position *after* the same token's earlier occurrence: the offset is seq_len - 1
-    back from the query. Average the attention on that diagonal over queries in the second copy.
-    """
-    raise NotImplementedError
+    # query q attends to key q-(L-1); element i of this diagonal is (q=i+L-1, k=i)
+    d = pattern.diagonal(offset=-(seq_len - 1), dim1=-2, dim2=-1)
+    return d[..., 2:].mean(dim=(0, -1))    # keep only queries in the second copy (q >= L+1)
 
 
 def per_position_loss(model: GPT, tokens: Tensor) -> Tensor:
-    """tokens [B, T] -> [T-1]: next-token cross-entropy at each position, averaged over batch."""
-    raise NotImplementedError
+    logits = model(tokens)                                                    # [B, T, V]
+    return F.cross_entropy(logits[:, :-1].transpose(1, 2), tokens[:, 1:], reduction="none").mean(0)  # [T-1]
 
 
 @torch.no_grad()
 def ablate_head(model: GPT, layer: int, head: int) -> Tensor:
-    """Zero W_O[head] of the given layer in place; return the old slice so you can restore it."""
-    raise NotImplementedError
+    W_O = model.blocks[layer].attn.W_O
+    old = W_O[head].clone()
+    W_O[head] = 0                          # this head now writes nothing into the residual stream
+    return old
 
 
 def train_induction_model(steps: int = 3000, min_len: int = 10, max_len: int = 30, d_vocab: int = 64, fixed_len: int | None = None, seed: int = 0) -> GPT:
-    """Train an attn-only 2-layer model on repeated_random_tokens. You write the loop
-    (reuse configure_optimizer from part2_gpt.train if you like).
-    Suggested config: d_model 64, n_heads 4, n_ctx = 1 + 2*max_len, lr 1e-3, batch 64.
-
-    Each step, draw seq_len uniformly from [min_len, max_len], or use fixed_len if given.
-    Log loss on the first and second halves separately. You should see a plateau and
-    then a sudden drop in second-half loss: that drop is the induction head forming.
-
-    Do this first, before the varying-length version: train with fixed_len=20 and
-    run the head scores. The second-half loss still goes to ~0, but look at *which
-    layer* has the high induction score, and where the prev-token head went. Work out
-    what the model learned instead and why a fixed seq_len allowed it. (Hint: learned
-    absolute position embeddings.) Checking that your task doesn't admit a shortcut
-    is the same habit you'll need for every ARENA circuit claim.
-
-    Even with varying lengths, some seeds settle on a different solution (loss low,
-    induction scores low everywhere). If that happens, don't just reseed: look at
-    where the heads actually attend (pattern[:, h, q].topk) and describe the
-    alternative. Then reseed. With the defaults, most seeds give a layer-0 head
-    with prev_token_score ~0.6+ and layer-1 heads with induction_score ~0.8.
-    """
-    raise NotImplementedError
+    from part2_gpt.train import configure_optimizer
+    torch.manual_seed(seed)
+    g = torch.Generator().manual_seed(seed)
+    model = GPT(Config(d_vocab=d_vocab, d_model=64, n_layers=2, n_heads=4, n_ctx=1 + 2 * max_len, attn_only=True))
+    opt = configure_optimizer(model, 1e-3, 0.01)
+    for step in range(steps):
+        L = fixed_len or int(torch.randint(min_len, max_len + 1, (1,), generator=g))
+        loss = per_position_loss(model, repeated_random_tokens(64, L, d_vocab, g))
+        opt.zero_grad()
+        loss.mean().backward()
+        opt.step()
+        if step % 250 == 0:
+            print(f"step {step:4d}  L={L:2d}  1st half {loss[1:L].mean():.3f}  2nd half {loss[L + 1:].mean():.3f}")
+    return model
 
 
 def main() -> None:
-    seq_len, d_vocab = 20, 64  # evaluation length; training varies it
-    model = train_induction_model(d_vocab=d_vocab)
-    g = torch.Generator().manual_seed(123)
-    toks = repeated_random_tokens(32, seq_len, d_vocab, g)
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--fixed-len", type=int, default=None)
+    ap.add_argument("--seed", type=int, default=0)
+    args = ap.parse_args()
+
+    seq_len, d_vocab = 20, 64
+    model = train_induction_model(d_vocab=d_vocab, fixed_len=args.fixed_len, seed=args.seed)
+    toks = repeated_random_tokens(32, seq_len, d_vocab, torch.Generator().manual_seed(123))
+
+    def second_half() -> float:
+        return per_position_loss(model, toks)[seq_len + 1:].mean().item()
 
     loss = per_position_loss(model, toks)
-    print(f"ln(d_vocab) = {math.log(d_vocab):.2f}")
-    print(f"first half loss  {loss[1:seq_len].mean():.3f}")
-    print(f"second half loss {loss[seq_len + 1:].mean():.3f}")
-
+    print(f"\nln(d_vocab) = {math.log(d_vocab):.2f}   1st half {loss[1:seq_len].mean():.3f}   2nd half {second_half():.3f}")
     model(toks)
     for layer, block in enumerate(model.blocks):
         p = block.attn.pattern
         print(f"layer {layer}  prev-token {prev_token_score(p).numpy().round(2)}  induction {induction_score(p, seq_len).numpy().round(2)}")
 
-    # TODO: ablate the top induction head, re-measure second-half loss, restore it.
-    # Then ablate the top prev-token head in layer 0 and do the same. Explain both results,
-    # including why ablating one of several induction heads may hurt less than you'd expect.
+    for layer in range(2):
+        for h in range(4):
+            old = ablate_head(model, layer, h)
+            print(f"ablate L{layer}H{h}: 2nd half {second_half():.3f}")
+            with torch.no_grad():
+                model.blocks[layer].attn.W_O[h] = old
 
 
 if __name__ == "__main__":
