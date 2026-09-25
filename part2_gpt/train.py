@@ -50,6 +50,7 @@ class TrainConfig:
 
 def lm_loss(logits: Tensor, targets: Tensor) -> Tensor:
     """logits [B, T, V], targets [B, T] -> scalar mean next-token cross-entropy (nats)."""
+    return F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
     raise NotImplementedError
 
 
@@ -59,6 +60,14 @@ def configure_optimizer(model: nn.Module, lr: float, weight_decay: float) -> tor
     no-decay — every parameter with ndim < 2 (biases, LayerNorm w/b)
     Be ready to explain why decaying LayerNorm gains is a bad idea.
     """
+    decay_params = [p for p in model.parameters() if p.ndim >= 2]
+    no_decay_params = [p for p in model.parameters() if p.ndim < 2]
+    param_groups = [
+        {"params": decay_params, "weight_decay": weight_decay},
+        {"params": no_decay_params, "weight_decay": 0.0},
+    ]
+    optimizer = torch.optim.AdamW(param_groups, lr=lr, betas=(0.9, 0.95))
+    return optimizer
     raise NotImplementedError
 
 
@@ -66,28 +75,46 @@ def lr_at(step: int, *, max_lr: float, min_lr: float, warmup_steps: int, total_s
     """Linear warmup from 0 to max_lr over warmup_steps (lr_at(0) == 0 is fine),
     then cosine decay from max_lr to min_lr, reaching min_lr at total_steps and staying there.
     """
+    if step < warmup_steps:
+        return max_lr * step / warmup_steps
+    elif step < total_steps:
+        decay_steps = total_steps - warmup_steps
+        decay_progress = (step - warmup_steps) / decay_steps
+        cosine_decay = 0.5 * (1 + math.cos(math.pi * decay_progress))
+        return min_lr + (max_lr - min_lr) * cosine_decay
+    else:
+        return min_lr
     raise NotImplementedError
 
 
 def global_grad_norm(model: nn.Module) -> float:
     """L2 norm of all gradients concatenated (what clip_grad_norm_ measures). Ignore params with grad None."""
+    total_norm = 0.0
+    for p in model.parameters():
+        if p.grad is not None:
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+    return total_norm ** 0.5
     raise NotImplementedError
 
 
 def update_ratio(before: list[Tensor], model: nn.Module) -> float:
-    """||theta_after - theta_before|| / ||theta_before||, over all params, as one number.
-
-    `before` is [p.detach().clone() for p in model.parameters()] taken just before
-    optimizer.step(). A healthy run sits around 1e-3; much larger means the lr is
-    too high, much smaller means the model has almost stopped moving.
-    """
-    raise NotImplementedError
+    num = sum((p.detach() - b).pow(2).sum().item() for p, b in zip(model.parameters(), before))
+    den = sum(b.pow(2).sum().item() for b in before)
+    return math.sqrt(num / den)
 
 
 @torch.no_grad()
 def estimate_loss(model: GPT, data: Tensor, block_size: int, batch_size: int, n_batches: int, generator: torch.Generator) -> float:
     """Mean lm_loss over n_batches random batches. Remember model.eval() / model.train()."""
-    raise NotImplementedError
+    was_training = model.training
+    model.eval()
+    losses = []
+    for _ in range(n_batches):
+        x, y = get_batch(data, block_size, batch_size, generator)
+        losses.append(lm_loss(model(x), y).item())
+    model.train(was_training)   # restore whatever mode the caller was in
+    return sum(losses) / len(losses)
 
 
 # --------------------------------------------------------------------------- #
@@ -140,6 +167,51 @@ def train(model: GPT, train_data: Tensor, val_data: Tensor, tcfg: TrainConfig, l
     Print a line at each eval so you can watch it. Use one torch.Generator seeded
     from tcfg.seed for batches and a separate one for eval batches.
     """
+    g = torch.Generator().manual_seed(tcfg.seed)            # training batches
+    g_eval = torch.Generator().manual_seed(tcfg.seed + 1)   # eval batches: separate so eval doesn't shift the training stream
+    opt = configure_optimizer(model, tcfg.max_lr, tcfg.weight_decay)
+    T = model.cfg.n_ctx
+    model.train()
+    t_last = time.time()
+
+    for step in range(tcfg.steps):
+        # 1. lr for this step
+        lr = lr_at(step, max_lr=tcfg.max_lr, min_lr=tcfg.min_lr, warmup_steps=tcfg.warmup_steps, total_steps=tcfg.steps)
+        for group in opt.param_groups:
+            group["lr"] = lr
+
+        # 2-3. batch, forward, loss
+        x, y = get_batch(train_data, T, tcfg.batch_size, g)
+        loss = lm_loss(model(x), y)
+
+        # 4. fresh grads, backward
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+
+        # 5-6. raw grad norm (pre-clip, so spikes are visible), then clip
+        gn = global_grad_norm(model)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), tcfg.grad_clip)
+
+        # 7. step, measuring how far the params moved on log steps
+        is_log = step % tcfg.log_interval == 0 or step == tcfg.steps - 1
+        is_eval = step % tcfg.eval_interval == 0 or step == tcfg.steps - 1
+        before = [p.detach().clone() for p in model.parameters()] if is_log else None
+        opt.step()
+
+        # 8. log
+        if is_log:
+            now = time.time()
+            n_steps = 1 if step == 0 else tcfg.log_interval
+            row = dict(step=step, lr=lr, train_loss=loss.item(), grad_norm=gn,
+                       update_ratio=update_ratio(before, model),
+                       tok_per_s=tcfg.batch_size * T * n_steps / max(now - t_last, 1e-9))
+            t_last = now
+            if is_eval:
+                row["val_loss"] = estimate_loss(model, val_data, T, tcfg.batch_size, tcfg.eval_batches, g_eval)
+                print(f"step {step:5d}  train {row['train_loss']:.3f}  val {row['val_loss']:.3f}  |g| {gn:.2f}  lr {lr:.2e}")
+            logger.log(**row)
+
+    return model
     raise NotImplementedError
 
 

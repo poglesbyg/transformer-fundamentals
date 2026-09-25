@@ -36,6 +36,21 @@ def sample(
     would store, its memory in bytes for GPT-2 small at 1024 tokens, and why it
     makes generation O(T) per token instead of O(T^2).
     """
+    model.eval()
+    toks = prompt.clone()                                   # [T]
+    for _ in range(max_new_tokens):
+        ctx = toks[-model.cfg.n_ctx:]                       # crop to the context window
+        logits = model(ctx[None])[0, -1]                    # [1, T] -> [1, T, V] -> [V]: last position only
+        if temperature == 0:
+            nxt = logits.argmax()[None]                     # greedy
+        else:
+            logits = logits / temperature                   # <1 sharpens, >1 flattens
+            if top_k is not None:
+                kth = logits.topk(top_k).values[-1]         # k-th largest logit
+                logits = logits.masked_fill(logits < kth, float("-inf"))
+            nxt = torch.multinomial(logits.softmax(-1), 1, generator=generator)
+        toks = torch.cat([toks, nxt])                       # [T+1]
+    return toks
     raise NotImplementedError
 
 
